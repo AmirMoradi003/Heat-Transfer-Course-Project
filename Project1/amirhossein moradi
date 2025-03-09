@@ -1,0 +1,121 @@
+clc
+clear all
+close all
+
+L_tumor=20E-3; L_fat=4E-3; L_lung=16E-3; L_total=L_tumor+L_fat+L_lung;
+del_y = 1e-3;
+y1=0:del_y:L_tumor;   y2=L_tumor:del_y:L_tumor+L_fat;   y3=L_tumor+L_fat:del_y:L_total;
+y=[ y1 y2(2:end) y3(2:end) ];
+ny=length(y);
+ny1=length(y1);
+ny2=length(y1)+length(y2)-1;
+length = 40e-3;
+P_A=pi*length/(pi*(length/2)^2);
+Qr=@(y)121*1800*exp(-(121+0.5)*y).*(y<=L_tumor);  
+T_body = @(t) 37 + sin( 0.005 * t );
+
+Cp_T = 4200 ;        Cp_F = 2350 ;    Cp_H = 4010 ;
+rho_T = 1100 ;       rho_F = 910 ;    rho_H = 1050 ;
+th_T = 0.48 ;        th_F = 0.2 ;     th_H = 0.605 ;
+wb_T = 0.00091 ;     wb_F = 0 ;     wb_H = 0.0005 ;
+rho_b=106;
+Cb = 3860 ;
+T_inf = 25; 
+TH=zeros(1,ny)+th_H;     TH(1:ny1)=th_T;     TH(ny1+1:ny2)=th_F; 
+RHO=zeros(1,ny)+rho_H;   RHO(1:ny1)=rho_T;   RHO(ny1+1:ny2)=rho_F; 
+CP=zeros(1,ny)+Cp_H;     CP(1:ny1)=Cp_T;     CP(ny1+1:ny2)=Cp_F; 
+WB=zeros(1,ny)+wb_H;     WB(1:ny1)=wb_T;     WB(ny1+1:ny2)=wb_F; 
+A =zeros(1,ny)+3E+91;    A(1:ny1)=1E+91;     A(ny1+1:ny2)=4.43E+90; 
+E =zeros(1,ny)+5.6E+5;  
+R=8.314;
+Qt = zeros(1,ny) + 700 ;    Qt(1:ny1) = 1091 ;      Qt(ny1+1:ny2) = 0 ; 
+T_in = 36 ;
+dt = 1 ;
+t = 0 ;
+h=5;
+sigma(1:ny)=0;
+T=zeros(1,ny)+T_in;
+TT=T;
+for k=1:1500000
+    t=t+dt;
+    Tb = T_body(t);
+   AA(ny,ny)=1;       B(ny) =T_body(t);
+   for i=1:ny-1
+       if i==1
+          apt=RHO(i)*CP(i)/dt;
+          ae=2*TH(i)/del_y^2;
+             
+          ap=apt+ae+rho_b*Cb*WB(i)+h*P_A;
+          B(i)=apt*T(i)+h*P_A*T_inf+rho_b*Cb*WB(i)*Tb+Qt(i)+Qr(y(i));
+           AA(i,[i i+1])=[ ap -ae];
+       elseif(i==ny1 || i==ny2)
+           
+          apt=0.5*(RHO(i)*CP(i)+RHO(i+1)*CP(i+1))/dt;
+          ae=TH(i+1)/del_y^2;
+          aw=TH(i-1)/del_y^2;
+          ap=apt+ae+aw+0.5*rho_b*Cb*(WB(i)+WB(i+1))+h*P_A;
+          B(i)=apt*T(i)+h*P_A*T_inf+0.5*rho_b*Cb*(WB(i)+WB(i+1))*Tb+0.5*(Qt(i)+Qr(y(i))+Qt(i+1)+Qr(y(i+1)));
+          AA(i,[i-1 i i+1])=[-aw ap -ae];
+       else
+          apt=RHO(i)*CP(i)/dt;
+          ae=TH(i)/del_y^2;
+          aw=TH(i)/del_y^2;
+          ap=apt+ae+aw+rho_b*Cb*WB(i)+h*P_A;
+          B(i)=apt*T(i)+h*P_A*T_inf+rho_b*Cb*WB(i)*Tb+Qt(i)+Qr(y(i));
+          AA(i,[i-1 i i+1])=[-aw ap -ae]; 
+       end
+   end
+   AA=sparse(AA);
+   T=AA^-1*B';
+  TT(k+1,:)=T;
+  for i=1:ny
+   sigma(k+1,i)=simpson(A(i).*exp(-E(i)/R./(TT(1:k+1,i)+273.15)),dt,k+1);
+  end 
+   
+   if(max(T)>46)
+       k
+       break;
+   end
+ 
+end
+
+fprintf(' simulation time is = %-12.2f s \n',t);
+H=0;
+H1=0;
+
+for i=1:ny
+    H=H+CP(i)*RHO(i)*(T(i)-36)*del_y*pi*(length/2)^2;
+end
+
+fprintf(' totall heat        = %-12.5f \n',H);
+
+figure(1);
+ plot(y,T)
+ xlabel(' length[m] ');
+ ylabel('temperature(\circ C)')
+ 
+ figure(2)
+ surf(0:dt:(k)*dt,y,sigma')
+ xlabel('Time(s)')
+ ylabel(' y')
+ colorbar
+ figure(3)
+ plot(y,sigma(end,:),'k'); hold on;
+ plot(y,ones(1,ny),'r');
+ legend('sigma')
+ 
+function integral = simpson(y,dh,n)
+integral=0;
+if( mod(n,2)==0)
+    for i=3:2:n-1
+        integral = integral + dh * ( y(i) + 4.*y(i-1) + y(i-2) ) / 3 ;
+    end
+    integral = integral + dh * ( y(n) + y(n-1) ) / 2 ;
+else
+    for i=3:2:n
+        integral = integral + dh * ( y(i) + 4.*y(i-1) + y(i-2) ) / 3 ;
+    end
+end
+end
+
+%%%%  END OF PROGRAM %%%
